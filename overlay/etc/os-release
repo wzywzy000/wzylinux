@@ -1,0 +1,12 @@
+NAME="WZY Linux"
+VERSION="基于 Ubuntu 开发"
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME="WZY Linux（基于 Ubuntu 开发）"
+VERSION_ID="22.04"
+HOME_URL="https://wangzeyue.uk"
+SUPPORT_URL="https://wangzeyue.uk"
+BUG_REPORT_URL="https://wangzeyue.uk"
+PRIVACY_POLICY_URL="https://wangzeyue.uk"
+VERSION_CODENAME=jammy
+UBUNTU_CODENAME=jammy

@@ -101,7 +101,10 @@ chroot "${CHROOT}" /bin/bash -c "
     vim-tiny \
     ca-certificates \
     fonts-noto-core \
-    fonts-noto-cjk
+    fonts-noto-cjk \
+    x11-xserver-utils \
+    plymouth \
+    plymouth-theme-ubuntu-text
   # GNOME 桌面 + 登录管理器 + 图形化安装器（Calamares）
   apt-get install -y --no-install-recommends \
     ubuntu-desktop-minimal \
@@ -115,6 +118,16 @@ cp -a "${SCRIPT_DIR}/overlay/." "${CHROOT}/"
 # 修正权限：sudoers 必须 0440，桌面启动器需可执行
 chmod 0440 "${CHROOT}/etc/sudoers.d/wzy-live" 2>/dev/null || true
 chmod 0755 "${CHROOT}/etc/skel/Desktop/install-wzy.desktop" 2>/dev/null || true
+chmod 0755 "${CHROOT}/usr/local/bin/wzy-install" 2>/dev/null || true
+
+# 8.5) 开机动画：采用 Ubuntu 原生主题(ubuntu-text)，仅把其中的 "Ubuntu" 文案改为 WZY Linux
+echo "[WZY] 配置 Plymouth 开机动画（Ubuntu 原生 + 改名 WZY Linux）…"
+UBT="${CHROOT}/usr/share/plymouth/themes/ubuntu-text/ubuntu-text.script"
+if [ -f "${UBT}" ]; then
+  sed -i 's/Ubuntu/WZY Linux/g' "${UBT}"
+fi
+chroot "${CHROOT}" /bin/bash -c "plymouth-set-default-theme -R ubuntu-text" 2>/dev/null \
+  || chroot "${CHROOT}" plymouth-set-default-theme ubuntu-text 2>/dev/null || true
 
 # 9) 卸载 chroot 挂载
 cleanup_mounts

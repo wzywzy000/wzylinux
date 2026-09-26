@@ -1,0 +1,6 @@
+#!/bin/bash
+# WZY Linux 图形安装器启动器
+# Calamares 必须以 root 运行；但 root 默认无法连接当前用户的 X 显示，
+# 所以先放行 localuser:root 的 X 访问（仅本机 root，不涉及网络），再启动 Calamares。
+xhost +SI:localuser:root >/dev/null 2>&1 || true
+exec sudo -E calamares "$@"
