@@ -1,0 +1,2 @@
+# WZY Linux live 用户免密 sudo（仅 live 环境，安装后由真实系统接管）
+ubuntu ALL=(ALL) NOPASSWD: ALL

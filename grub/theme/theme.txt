@@ -1,0 +1,64 @@
+# WZY Linux GRUB 主题 — 深色极光渐变 + 玻璃风
+# 颜色由 build.sh 从 design tokens 注入（__XXX__ 占位符）
+# desktop-image 行由 build.sh 在有背景图时自动启用，否则为纯色画布
+
+title-color:     "#__TEXT_HI__"
+message-color:   "#__TEXT_MID__"
+
+# 桌面（启动菜单背景区）
+desktop-color:   "#__CANVAS__"
+#desktop-image: "background.png"
+
+# 终端
+terminal-color-normal:   "#__TEXT_MID__"/"#__CANVAS__"
+terminal-color-highlight:"#__CANVAS__"/"#__PRIMARY__"
+
+# 启动项列表（玻璃风菜单）
++ boot_menu {
+  left = 25%
+  width = 50%
+  top = 30%
+  height = 50%
+  item_font = "Unicode 18"
+  item_color = "#__TEXT_MID__"
+  selected_item_color = "#__TEXT_HI__"
+  item_height = 32
+  item_padding = 8
+  item_spacing = 10
+  icon_height = 0
+  icon_width = 0
+}
+
+# 标题
++ label {
+  top = 12%
+  left = 0
+  width = 100%
+  align = "center"
+  text = "WZY Linux"
+  font = "Unicode 32"
+  color = "#__PRIMARY__"
+}
+
++ label {
+  top = 18%
+  left = 0
+  width = 100%
+  align = "center"
+  text = "amd64 · 兼容老款 Intel 酷睿"
+  font = "Unicode 14"
+  color = "#__TEXT_MID__"
+}
+
+# 底部提示
++ vbox {
+  top = 88%
+  left = 0
+  width = 100%
+  + label {
+    align = "center"
+    text = "↑/↓ 选择    Enter 启动    E 编辑"
+    font = "Unicode 13"
+    color = "#__TEXT_MID__"
+  }
+}

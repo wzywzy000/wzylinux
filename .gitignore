@@ -1,0 +1,13 @@
+# ===== 构建产物（体积大 / 由 build.sh 重新生成，不入库） =====
+cache/
+chroot/
+work/
+iso/
+out/
+*.iso
+
+# ===== 编辑器 / 系统杂项 =====
+.DS_Store
+Thumbs.db
+*.swp
+*~

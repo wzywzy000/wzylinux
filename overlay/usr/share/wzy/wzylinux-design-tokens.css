@@ -1,0 +1,88 @@
+/* ============================================================
+   WZYLinux Design Tokens — 设计令牌
+   深色优先（Dark-first）· 玻璃拟态 + 深色渐变视觉体系
+   作者：WorkBuddy 智能设计助手
+   ============================================================ */
+
+:root,
+[data-theme="dark"] {
+  /* —— 表面 —— */
+  --wzy-canvas: #0A0D1A;
+  --wzy-surface-raised: #121626;
+  --wzy-surface-card: #1A1F35;
+  --wzy-glass: rgba(255, 255, 255, 0.06);
+
+  /* —— 品牌与主色 —— */
+  --wzy-primary: #5B6CFF;
+  --wzy-violet: #A855F7;
+  --wzy-cyan: #22D3EE;
+  --wzy-green: #35ED7E;
+  --wzy-magenta: #EC48BD;
+
+  /* —— 语义色 —— */
+  --wzy-success: #35ED7E;
+  --wzy-warning: #FBBF24;
+  --wzy-danger: #F87171;
+  --wzy-info: #38BDF8;
+
+  /* —— 文本 —— */
+  --wzy-text-hi: #F5F7FF;
+  --wzy-text-mid: #B9C0D4;
+  --wzy-text-low: #7C8499;
+
+  /* —— 描边 —— */
+  --wzy-border: rgba(255, 255, 255, 0.12);
+  --wzy-border-strong: rgba(255, 255, 255, 0.25);
+
+  /* —— 品牌渐变 —— */
+  --wzy-gradient-brand: linear-gradient(135deg, #5B6CFF 0%, #A855F7 50%, #22D3EE 100%);
+
+  /* —— 圆角 —— */
+  --wzy-radius-sm: 8px;
+  --wzy-radius-md: 12px;
+  --wzy-radius-lg: 16px;
+  --wzy-radius-xl: 24px;
+  --wzy-radius-pill: 9999px;
+
+  /* —— 间距（4px 基准栅格）—— */
+  --wzy-space-xs: 4px;
+  --wzy-space-sm: 8px;
+  --wzy-space-md: 12px;
+  --wzy-space-lg: 16px;
+  --wzy-space-xl: 24px;
+  --wzy-space-2xl: 32px;
+  --wzy-space-section: 48px;
+  --wzy-space-jumbo: 64px;
+
+  /* —— 字体 —— */
+  --wzy-font-display: "Space Grotesk", "Inter", sans-serif;
+  --wzy-font-sans: "Inter", "Noto Sans SC", sans-serif;
+  --wzy-font-mono: "JetBrains Mono", monospace;
+}
+
+[data-theme="light"] {
+  --wzy-canvas: #F4F6FC;
+  --wzy-surface-raised: #FFFFFF;
+  --wzy-surface-card: #FFFFFF;
+  --wzy-glass: rgba(10, 13, 26, 0.04);
+
+  --wzy-primary: #4F46E5;
+  --wzy-violet: #9333EA;
+  --wzy-cyan: #0891B2;
+  --wzy-green: #16A34A;
+  --wzy-magenta: #DB2777;
+
+  --wzy-success: #16A34A;
+  --wzy-warning: #D97706;
+  --wzy-danger: #DC2626;
+  --wzy-info: #0284C7;
+
+  --wzy-text-hi: #0A0D1A;
+  --wzy-text-mid: #3A4256;
+  --wzy-text-low: #6B7385;
+
+  --wzy-border: rgba(10, 13, 26, 0.12);
+  --wzy-border-strong: rgba(10, 13, 26, 0.25);
+
+  --wzy-gradient-brand: linear-gradient(135deg, #4F46E5 0%, #9333EA 50%, #0891B2 100%);
+}

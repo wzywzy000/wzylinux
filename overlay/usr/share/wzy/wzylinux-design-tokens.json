@@ -1,0 +1,40 @@
+{
+  "wzy": {
+    "color": {
+      "canvas": "#0A0D1A",
+      "surfaceRaised": "#121626",
+      "surfaceCard": "#1A1F35",
+      "glass": "rgba(255,255,255,0.06)",
+      "primary": "#5B6CFF",
+      "violet": "#A855F7",
+      "cyan": "#22D3EE",
+      "green": "#35ED7E",
+      "magenta": "#EC48BD",
+      "success": "#35ED7E",
+      "warning": "#FBBF24",
+      "danger": "#F87171",
+      "info": "#38BDF8",
+      "textHi": "#F5F7FF",
+      "textMid": "#B9C0D4",
+      "textLow": "#7C8499"
+    },
+    "gradient": {
+      "brand": "linear-gradient(135deg, #5B6CFF 0%, #A855F7 50%, #22D3EE 100%)"
+    },
+    "radius": { "sm": 8, "md": 12, "lg": 16, "xl": 24, "pill": 9999 },
+    "space": { "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "2xl": 32, "section": 48, "jumbo": 64 },
+    "font": {
+      "display": "Space Grotesk",
+      "sans": "Inter, Noto Sans SC",
+      "mono": "JetBrains Mono"
+    },
+    "type": {
+      "display": { "size": 56, "weight": 800, "lineHeight": 1.0 },
+      "h1": { "size": 36, "weight": 700, "lineHeight": 1.1 },
+      "h2": { "size": 28, "weight": 700, "lineHeight": 1.2 },
+      "body": { "size": 16, "weight": 400, "lineHeight": 1.6 },
+      "caption": { "size": 13, "weight": 500, "lineHeight": 1.4 },
+      "code": { "size": 14, "weight": 400, "lineHeight": 1.5 }
+    }
+  }
+}

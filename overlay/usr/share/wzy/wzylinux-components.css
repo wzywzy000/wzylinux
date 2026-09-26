@@ -1,0 +1,120 @@
+/* ============================================================
+   WZYLinux 基础组件 · Component Primitives
+   基于 wzylinux-design-tokens.css 的令牌实现
+   ============================================================ */
+
+/* —— 按钮 —— */
+.wzy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--wzy-space-sm);
+  padding: 14px 24px;
+  border: 0;
+  border-radius: var(--wzy-radius-md);
+  font-family: var(--wzy-font-sans);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: filter .15s ease, transform .15s ease;
+}
+.wzy-btn:hover { filter: brightness(1.08); }
+.wzy-btn:active { transform: translateY(1px); }
+.wzy-btn--primary { background: var(--wzy-primary); color: #fff; }
+.wzy-btn--ghost {
+  background: var(--wzy-glass);
+  color: var(--wzy-text-hi);
+  border: 1px solid var(--wzy-border-strong);
+}
+.wzy-btn--success { background: var(--wzy-green); color: #0A0D1A; }
+.wzy-btn--danger { background: var(--wzy-danger); color: #0A0D1A; }
+
+/* —— 文本输入 —— */
+.wzy-input {
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: var(--wzy-radius-md);
+  background: var(--wzy-glass);
+  border: 1px solid var(--wzy-border-strong);
+  color: var(--wzy-text-hi);
+  font-family: var(--wzy-font-sans);
+  font-size: 15px;
+  box-sizing: border-box;
+}
+.wzy-input::placeholder { color: var(--wzy-text-low); }
+.wzy-input:focus { outline: 2px solid var(--wzy-primary); outline-offset: 1px; }
+
+/* —— 玻璃卡片 —— */
+.wzy-card {
+  padding: 24px;
+  border-radius: var(--wzy-radius-lg);
+  background: var(--wzy-glass);
+  border: 1px solid var(--wzy-border-strong);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .15), inset 0 1px 2px rgba(255, 255, 255, .2);
+}
+
+/* —— 标签 —— */
+.wzy-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: var(--wzy-radius-pill);
+  background: var(--wzy-violet);
+  color: #fff;
+  font-family: var(--wzy-font-sans);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* —— 开关 —— */
+.wzy-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 52px;
+  height: 30px;
+  padding: 3px;
+  border-radius: 15px;
+  background: var(--wzy-green);
+}
+.wzy-toggle__knob {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* —— 进度条 —— */
+.wzy-progress {
+  width: 480px;
+  max-width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .08);
+  overflow: hidden;
+}
+.wzy-progress__fill {
+  width: 65%;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--wzy-green);
+}
+
+/* —— 窗口栏 —— */
+.wzy-window-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--wzy-radius-md);
+  background: var(--wzy-surface-raised);
+  border: 1px solid var(--wzy-border);
+}
+.wzy-window-bar__dots { display: flex; gap: 8px; }
+.wzy-window-bar__dot { width: 12px; height: 12px; border-radius: 50%; }
+.wzy-window-bar__dot--red { background: var(--wzy-danger); }
+.wzy-window-bar__dot--yellow { background: var(--wzy-warning); }
+.wzy-window-bar__dot--green { background: var(--wzy-green); }
