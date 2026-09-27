@@ -16,6 +16,25 @@ if [ "$(id -u)" -ne 0 ]; then
   exec sudo "$0" "$@"
 fi
 
+# 0.5) 修正系统时钟漂移：WSL/虚拟机休眠后时钟可能落后数小时，
+#      导致 apt 认为仓库 Release 文件"尚未生效"而拒绝更新。从镜像站 HTTP 头取权威时间校准。
+fix_clock() {
+  local _h _now _set
+  for _h in https://mirrors.huaweicloud.com/ubuntu/ https://archive.ubuntu.com/ubuntu/ https://www.google.com/; do
+    _now=$(timeout 8 curl -fsI "$_h" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="date"{print $2; exit}')
+    [ -n "$_now" ] && break
+  done
+  if [ -n "$_now" ]; then
+    _set=$(date -d "$_now" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
+    if [ -n "$_set" ]; then
+      date -s "$_set" >/dev/null 2>&1 && echo "[WZY] 已校准系统时钟 -> $_set" || true
+    fi
+  else
+    echo "[WZY] 警告：无法获取网络时间，若 apt 报 Release 未生效请先校正本机时钟"
+  fi
+}
+fix_clock
+
 # 2) 载入配置
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=config.sh
@@ -30,8 +49,8 @@ echo "[WZY] 配置：DISTRO=${DISTRO} ARCH=${ARCH} -> ${ISO_NAME}"
 # 3) 安装构建依赖
 echo "[WZY] 安装构建依赖…"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y --no-install-recommends \
+apt-get -o Acquire::Check-Valid-Until=false update -y
+apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
   debootstrap \
   squashfs-tools \
   grub-pc-bin \
@@ -57,6 +76,7 @@ debootstrap --arch="${ARCH}" --components=main,universe \
 cp /etc/resolv.conf "${CHROOT}/etc/resolv.conf"
 
 # 7) 在 chroot 内安装系统包
+fix_clock  # 校准时钟（见顶部定义），确保 chroot 内 apt 更新不被"Release 未生效"拦截
 echo "[WZY] chroot 内安装内核与 live 组件…"
 mount --bind /proc  "${CHROOT}/proc"
 mount --bind /sys   "${CHROOT}/sys"
@@ -86,9 +106,9 @@ EOF
 chroot "${CHROOT}" /bin/bash -c "
   set -e
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y
+  apt-get -o Acquire::Check-Valid-Until=false update -y
   # 最小但可用的 live 系统
-  apt-get install -y --no-install-recommends \
+  apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
     ${KERNEL_PKG} \
     casper \
     systemd-sysv \
@@ -104,9 +124,16 @@ chroot "${CHROOT}" /bin/bash -c "
     fonts-noto-cjk \
     x11-xserver-utils \
     plymouth \
-    plymouth-theme-ubuntu-text
+    plymouth-theme-ubuntu-text \
+    curl
+  # 安装 GNOME 前再校准一次时钟：GNOME 包体大、下载久，期间若时钟漂移会触发"Release 未生效"
+  _cn=\$(timeout 8 curl -fsI https://mirrors.huaweicloud.com/ubuntu/ 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower(\$1)==\"date\"{print \$2; exit}')
+  if [ -n \"\$_cn\" ]; then
+    _cs=\$(date -d \"\$_cn\" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
+    [ -n \"\$_cs\" ] && date -s \"\$_cs\" >/dev/null 2>&1 || true
+  fi
   # GNOME 桌面 + 登录管理器 + 图形化安装器（Calamares）
-  apt-get install -y --no-install-recommends \
+  apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
     ubuntu-desktop-minimal \
     gdm3 \
     calamares
