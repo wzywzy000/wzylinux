@@ -108,7 +108,10 @@ chroot "${CHROOT}" /bin/bash -c "
   export DEBIAN_FRONTEND=noninteractive
   apt-get -o Acquire::Check-Valid-Until=false update -y
   # 最小但可用的 live 系统
-  apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
+  apt-get -o Acquire::Check-Valid-Until=false \
+    -o Dpkg::Options::=--force-confold \
+    -o Dpkg::Options::=--force-confdef \
+    install -y --no-install-recommends \
     ${KERNEL_PKG} \
     casper \
     systemd-sysv \
@@ -126,14 +129,13 @@ chroot "${CHROOT}" /bin/bash -c "
     plymouth \
     plymouth-theme-ubuntu-text \
     curl
-  # 安装 GNOME 前再校准一次时钟：GNOME 包体大、下载久，期间若时钟漂移会触发"Release 未生效"
-  _cn=\$(timeout 8 curl -fsI https://mirrors.huaweicloud.com/ubuntu/ 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower(\$1)==\"date\"{print \$2; exit}')
-  if [ -n \"\$_cn\" ]; then
-    _cs=\$(date -d \"\$_cn\" '+%Y-%m-%d %H:%M:%S' 2>/dev/null)
-    [ -n \"\$_cs\" ] && date -s \"\$_cs\" >/dev/null 2>&1 || true
-  fi
+  # 重要：本段整体位于 chroot 的 bash -c 双引号字符串内，
+  # 注释与代码里禁止出现 ASCII 双引号（会提前截断字符串、吞掉后续命令），必须用全角引号。
   # GNOME 桌面 + 登录管理器 + 图形化安装器（Calamares）
-  apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
+  apt-get -o Acquire::Check-Valid-Until=false \
+    -o Dpkg::Options::=--force-confold \
+    -o Dpkg::Options::=--force-confdef \
+    install -y --no-install-recommends \
     ubuntu-desktop-minimal \
     gdm3 \
     calamares
@@ -149,12 +151,17 @@ chmod 0755 "${CHROOT}/usr/local/bin/wzy-install" 2>/dev/null || true
 
 # 8.5) 开机动画：采用 Ubuntu 原生主题(ubuntu-text)，仅把其中的 "Ubuntu" 文案改为 WZY Linux
 echo "[WZY] 配置 Plymouth 开机动画（Ubuntu 原生 + 改名 WZY Linux）…"
-UBT="${CHROOT}/usr/share/plymouth/themes/ubuntu-text/ubuntu-text.script"
+# 注意：jammy 的 plymouth-theme-ubuntu-text 并不提供 ubuntu-text.script，
+# 开机文案实际在 ubuntu-text.plymouth 的 title= / Name= 行里，必须改这个文件。
+UBT="${CHROOT}/usr/share/plymouth/themes/ubuntu-text/ubuntu-text.plymouth"
 if [ -f "${UBT}" ]; then
-  sed -i 's/Ubuntu/WZY Linux/g' "${UBT}"
+  sed -i 's/^title=Ubuntu/title=WZY Linux/' "${UBT}"
+  sed -i 's/^Name=Ubuntu Text/Name=WZY Linux Text/' "${UBT}"
 fi
-chroot "${CHROOT}" /bin/bash -c "plymouth-set-default-theme -R ubuntu-text" 2>/dev/null \
-  || chroot "${CHROOT}" plymouth-set-default-theme ubuntu-text 2>/dev/null || true
+# 兜底写入默认主题配置，确保 plymouth 启动时真的用 ubuntu-text
+mkdir -p "${CHROOT}/etc/plymouth"
+printf '[Daemon]\nTheme=ubuntu-text\n' > "${CHROOT}/etc/plymouth/plymouthd.conf"
+chroot "${CHROOT}" plymouth-set-default-theme ubuntu-text 2>/dev/null || true
 
 # 9) 卸载 chroot 挂载
 cleanup_mounts
