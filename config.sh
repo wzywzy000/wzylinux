@@ -11,9 +11,9 @@ MIRROR="https://mirrors.huaweicloud.com/ubuntu"
 KERNEL_PKG="linux-image-generic"     # 通用内核元包（26.04 上解析为 linux-image-7.0.0-*-generic）
 
 # —— 桌面范围 ——
-# full   = ubuntu-desktop（完整桌面：LibreOffice / Thunderbird / GIMP 等全套）
-# minimal= ubuntu-desktop-minimal（仅 GNOME 核心）
-DESKTOP_FLAVOR="full"
+# full   = ubuntu-desktop（完整桌面：LibreOffice / Thunderbird / GIMP 等全套，ISO 会大很多）
+# minimal= ubuntu-desktop-minimal（仅 GNOME 核心 + 浏览器）
+DESKTOP_FLAVOR="minimal"
 
 # —— 安装器 ——
 # 26.04 起 GNOME 已移除 X11 会话（Wayland-only），旧的 Calamares 方案
