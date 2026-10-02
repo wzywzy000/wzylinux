@@ -93,9 +93,27 @@ if [ ! -f "/usr/share/debootstrap/scripts/${DISTRO}" ]; then
   fi
 fi
 
-echo "[WZY] debootstrap ${DISTRO} (${ARCH}) … 已缓存的包会跳过下载"
-debootstrap --arch="${ARCH}" --components=main,universe \
-  --cache-dir="${CACHE_DIR}/debootstrap" "${DISTRO}" "${CHROOT}" "${MIRROR}"
+# debootstrap 偶发下载失败：镜像同步竞态或网络抖动，包其实在（历史上踩过 perl-base、
+# libcap-ng0，这次是 dhcpcd-base）。单次抖动不该让整个构建挂掉，所以重试 3 次。
+# 每次重试前清空 chroot（debootstrap 不能往非空目录里装），但 cache/ 保留，
+# 已下好的包会命中缓存，重试只会补下缺的那几个。
+DB_OK=""
+for db_attempt in 1 2 3; do
+  echo "[WZY] debootstrap ${DISTRO} (${ARCH}) … 第 ${db_attempt} 次尝试（已缓存的包会跳过下载）"
+  if debootstrap --arch="${ARCH}" --components=main,universe \
+       --cache-dir="${CACHE_DIR}/debootstrap" "${DISTRO}" "${CHROOT}" "${MIRROR}"; then
+    DB_OK="1"
+    break
+  fi
+  echo "[WZY] debootstrap 第 ${db_attempt} 次失败，清理 chroot 后重试…"
+  rm -rf "${CHROOT}"
+  mkdir -p "${CHROOT}"
+  sleep 10
+done
+if [ -z "${DB_OK}" ]; then
+  echo "[WZY] debootstrap 连续 3 次失败，终止构建。可尝试：换 MIRROR（config.sh）或稍后重跑。"
+  exit 1
+fi
 
 # 6) 准备 chroot 内环境（网络解析）
 cp /etc/resolv.conf "${CHROOT}/etc/resolv.conf"
