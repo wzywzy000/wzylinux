@@ -1,6 +1,42 @@
 #!/bin/bash
-# WZY Linux 图形安装器启动器
-# Calamares 必须以 root 运行；但 root 默认无法连接当前用户的 X 显示，
-# 所以先放行 localuser:root 的 X 访问（仅本机 root，不涉及网络），再启动 Calamares。
-xhost +SI:localuser:root >/dev/null 2>&1 || true
-exec sudo -E calamares "$@"
+# WZY Linux 安装器启动器
+#
+# 26.04 起改用 Ubuntu 官方安装器（snap 包 ubuntu-desktop-bootstrap）。
+# 它是 Wayland 原生的，不需要 root 直连 X 显示 —— 旧方案靠强制 X11 让 root 跑
+# Calamares，而 26.04 的 GNOME 已经把 X11 会话删掉了，那条路彻底不通。
+#
+# 关于 snap 来源：本工程不在构建期预置该 snap。预置需要把它的 base snap
+# （core24 等）和依赖一起写进 /var/lib/snapd/seed，依赖较多、失败会拖累
+# live 桌面本身，所以改成首次点击时联网安装。离线环境请先手动装好：
+#   sudo snap install ubuntu-desktop-bootstrap --channel=26.04/stable
+#
+# 注意：这里的 SNAP_NAME / SNAP_CHANNEL 需与 config.sh 里的
+# INSTALLER_SNAP / INSTALLER_SNAP_CHANNEL 保持一致。
+set -u
+
+SNAP_NAME="ubuntu-desktop-bootstrap"
+SNAP_CHANNEL="26.04/stable"
+SNAP_BIN="/snap/bin/${SNAP_NAME}"
+
+notify() {
+  if command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    zenity --error --title="安装 WZY Linux" --text="$1" 2>/dev/null || echo "$1" >&2
+  else
+    echo "$1" >&2
+  fi
+}
+
+# 刚进桌面就点的话 snapd 可能还没就绪，最多等 30 秒
+for _ in $(seq 1 30); do
+  snap list >/dev/null 2>&1 && break
+  sleep 1
+done
+
+if [ ! -x "${SNAP_BIN}" ]; then
+  if ! sudo -n snap install "${SNAP_NAME}" --channel="${SNAP_CHANNEL}"; then
+    notify "安装器获取失败（${SNAP_NAME}）。\n请连网后重试，或在终端手动执行：\n\n  sudo snap install ${SNAP_NAME} --channel=${SNAP_CHANNEL}"
+    exit 1
+  fi
+fi
+
+exec "${SNAP_BIN}"

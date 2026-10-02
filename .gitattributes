@@ -1,0 +1,6 @@
+# 本工程的脚本/配置最终要在 Linux (WSL) 里执行，文本文件必须统一 LF。
+#
+# 本机 core.autocrlf=true，如果不加这条，checkout 时会被转成 CRLF，
+# 拷进 WSL 后 bash 会报一堆 xxx\r: command not found，
+# 而且这种错误在构建跑到一半才炸，很难定位。
+* text=auto eol=lf

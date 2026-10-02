@@ -68,6 +68,31 @@ rm -rf "${CHROOT}" "${ISO_ROOT}" "${WORK}" "${OUT_DIR}"
 mkdir -p "${CHROOT}" "${ISO_ROOT}" "${WORK}" "${OUT_DIR}"
 
 # 5) debootstrap 拉取最小根文件系统（--cache-dir 复用已下载的基础包）
+
+# 5.1) 发行版切换检测：旧的 .deb 缓存带旧版本号，不会被误用，但会一直占空间。
+#      这里只提示、不自动删除（避免误删后想回退旧版本时又要重下）。
+if [ -f "${CACHE_DIR}/.distro" ] && [ "$(cat "${CACHE_DIR}/.distro")" != "${DISTRO}" ]; then
+  echo "[WZY] 注意：cache/ 里是 $(cat "${CACHE_DIR}/.distro") 的包，本次 ${DISTRO} 不会命中，将重新下载。"
+  echo "[WZY]      确认不再需要旧缓存可手动清理： rm -rf ${CACHE_DIR}/debootstrap ${CACHE_DIR}/apt"
+fi
+echo "${DISTRO}" > "${CACHE_DIR}/.distro"
+
+# 5.2) debootstrap 脚本兜底：构建主机的 debootstrap 若比目标发行版旧，
+#      会没有对应 suite 的脚本（报 no script for ...）。软链一个已有版本顶上。
+if [ ! -f "/usr/share/debootstrap/scripts/${DISTRO}" ]; then
+  echo "[WZY] 构建主机 debootstrap 缺少 ${DISTRO} 脚本，尝试兜底…"
+  _db_base=""
+  for _s in questing plucky noble jammy; do
+    if [ -f "/usr/share/debootstrap/scripts/${_s}" ]; then _db_base="${_s}"; break; fi
+  done
+  if [ -n "${_db_base}" ]; then
+    ln -sf "/usr/share/debootstrap/scripts/${_db_base}" "/usr/share/debootstrap/scripts/${DISTRO}"
+    echo "[WZY] 已把 ${DISTRO} 脚本软链到 ${_db_base}"
+  else
+    echo "[WZY] 警告：找不到可复用的 debootstrap 脚本，debootstrap 可能失败"
+  fi
+fi
+
 echo "[WZY] debootstrap ${DISTRO} (${ARCH}) … 已缓存的包会跳过下载"
 debootstrap --arch="${ARCH}" --components=main,universe \
   --cache-dir="${CACHE_DIR}/debootstrap" "${DISTRO}" "${CHROOT}" "${MIRROR}"
@@ -103,17 +128,36 @@ deb ${MIRROR} ${DISTRO}-updates main universe
 deb ${MIRROR} ${DISTRO}-security main universe
 EOF
 
+# 7.1) 阻止 chroot 内 postinst 拉起服务（gdm3 / snapd / network-manager 等），
+#      否则在容器里起服务会卡死或直接失败。装完立刻移除，不会进最终系统。
+printf '#!/bin/sh\nexit 101\n' > "${CHROOT}/usr/sbin/policy-rc.d"
+chmod 0755 "${CHROOT}/usr/sbin/policy-rc.d"
+
+# 7.2) 桌面元包选择。ubuntu-desktop 本体几乎不带 Depends，
+#      真正的 LibreOffice / Thunderbird / GIMP 全在 Recommends 里，
+#      所以要完整桌面就必须放开 Recommends，不能用 --no-install-recommends。
+case "${DESKTOP_FLAVOR}" in
+  full)    DESKTOP_PKG="ubuntu-desktop"         ; APT_REC_FLAG=""                      ;;
+  minimal) DESKTOP_PKG="ubuntu-desktop-minimal" ; APT_REC_FLAG="--no-install-recommends" ;;
+  *) echo "[WZY] 未知 DESKTOP_FLAVOR=${DESKTOP_FLAVOR}，回退 full"; DESKTOP_PKG="ubuntu-desktop"; APT_REC_FLAG="" ;;
+esac
+echo "[WZY] 桌面：${DESKTOP_PKG}（flavor=${DESKTOP_FLAVOR}）"
+
 chroot "${CHROOT}" /bin/bash -c "
   set -e
   export DEBIAN_FRONTEND=noninteractive
   apt-get -o Acquire::Check-Valid-Until=false update -y
-  # 最小但可用的 live 系统
+  # live 基础组件：内核 + casper + 网络 + 字体 + 开机动画
+  # 注意 26.04：默认 initramfs 工具已换成 dracut，但 casper 的 live 引导钩子
+  # 是 initramfs-tools 的。所以这里显式安装 initramfs-tools，
+  # 稍后会强制用它重建 initrd，确保 live 能起来。
   apt-get -o Acquire::Check-Valid-Until=false \
     -o Dpkg::Options::=--force-confold \
     -o Dpkg::Options::=--force-confdef \
     install -y --no-install-recommends \
     ${KERNEL_PKG} \
     casper \
+    initramfs-tools \
     systemd-sysv \
     sudo \
     network-manager \
@@ -125,23 +169,39 @@ chroot "${CHROOT}" /bin/bash -c "
     ca-certificates \
     fonts-noto-core \
     fonts-noto-cjk \
-    x11-xserver-utils \
     plymouth \
     plymouth-theme-ubuntu-text \
     curl
   # 重要：本段整体位于 chroot 的 bash -c 双引号字符串内，
   # 注释与代码里禁止出现 ASCII 双引号（会提前截断字符串、吞掉后续命令），必须用全角引号。
-  # GNOME 桌面 + 登录管理器 + 图形化安装器（Calamares）
+  # snapd：26.04 官方安装器是 snap 包，必须有 snapd 才能装。
+  # 这里带 Recommends 装，免得少了 squashfs/fuse 之类的依赖导致 snapd 起不来。
   apt-get -o Acquire::Check-Valid-Until=false \
     -o Dpkg::Options::=--force-confold \
     -o Dpkg::Options::=--force-confdef \
-    install -y --no-install-recommends \
-    ubuntu-desktop-minimal \
-    gdm3 \
-    calamares
+    install -y snapd
+  # GNOME 桌面 + 登录管理器。
+  # 26.04 起 GNOME 已移除 X11 会话（Wayland-only），旧的 Calamares 方案
+  # （靠强制 X11 让 root 跑 Qt）不再可用，故不再安装 calamares。
+  apt-get -o Acquire::Check-Valid-Until=false \
+    -o Dpkg::Options::=--force-confold \
+    -o Dpkg::Options::=--force-confdef \
+    install -y ${APT_REC_FLAG} \
+    ${DESKTOP_PKG} \
+    gdm3
 "
 
-# 8) 应用 WZY 视觉覆盖层（主题 / 终端配色 / 设计令牌 / Calamares）
+# 7.3) 移除 policy-rc.d，别把它打进最终系统（否则装完系统里服务起不来）
+rm -f "${CHROOT}/usr/sbin/policy-rc.d"
+
+# 7.4) 强制用 initramfs-tools 重建 initrd。
+#      26.04 上内核 postinst 可能用 dracut 生成 initrd.img，那样 casper 钩子不会进去，
+#      live 就起不来。这里显式重建一次，用 initramfs-tools 覆盖它。
+echo "[WZY] 重建 initramfs（initramfs-tools）…"
+chroot "${CHROOT}" /bin/bash -c "update-initramfs -c -k all 2>/dev/null || update-initramfs -u -k all" || \
+  echo "[WZY] 警告：initramfs 重建失败，live 引导可能受影响"
+
+# 8) 应用 WZY 视觉覆盖层（主题 / 终端配色 / 设计令牌 / 安装器入口）
 echo "[WZY] 应用 WZY 覆盖层…"
 cp -a "${SCRIPT_DIR}/overlay/." "${CHROOT}/"
 # 修正权限：sudoers 必须 0440，桌面启动器需可执行
@@ -151,8 +211,9 @@ chmod 0755 "${CHROOT}/usr/local/bin/wzy-install" 2>/dev/null || true
 
 # 8.5) 开机动画：采用 Ubuntu 原生主题(ubuntu-text)，仅把其中的 "Ubuntu" 文案改为 WZY Linux
 echo "[WZY] 配置 Plymouth 开机动画（Ubuntu 原生 + 改名 WZY Linux）…"
-# 注意：jammy 的 plymouth-theme-ubuntu-text 并不提供 ubuntu-text.script，
+# 注意：ubuntu-text 主题并不提供 ubuntu-text.script，
 # 开机文案实际在 ubuntu-text.plymouth 的 title= / Name= 行里，必须改这个文件。
+# （26.04 的 manifest 确认 plymouth-theme-ubuntu-text 仍然存在，方案可沿用）
 UBT="${CHROOT}/usr/share/plymouth/themes/ubuntu-text/ubuntu-text.plymouth"
 if [ -f "${UBT}" ]; then
   sed -i 's/^title=Ubuntu/title=WZY Linux/' "${UBT}"
@@ -178,6 +239,17 @@ VMLINUZ=$(ls "${CHROOT}/boot"/vmlinuz-* | head -n1)
 INITRD=$(ls "${CHROOT}/boot"/initrd.img-* | head -n1)
 cp "${VMLINUZ}" "${ISO_ROOT}/casper/vmlinuz"
 cp "${INITRD}" "${ISO_ROOT}/casper/initrd"
+
+# 10.1) 校验 casper 的 live 引导脚本是否真的进了 initrd。
+#       26.04 上 dracut 可能接管 initramfs，若这里是红的，live 一定起不来。
+if command -v lsinitramfs >/dev/null 2>&1; then
+  if lsinitramfs "${INITRD}" 2>/dev/null | grep -q casper; then
+    echo "[WZY] initrd 已包含 casper live 引导脚本 ✓"
+  else
+    echo "[WZY] 警告：initrd 里没找到 casper 脚本，live 大概率无法引导"
+    echo "[WZY]   排查：确认 chroot 内装的是 initramfs-tools，且 dracut 没有接管 /boot/initrd.img-*"
+  fi
+fi
 
 # 11) 生成 GRUB 主题背景（可选：有 ImageMagick 就画品牌渐变，否则纯色）
 echo "[WZY] 生成 GRUB 主题…"
