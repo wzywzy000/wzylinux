@@ -8,6 +8,9 @@ out/
 # debootstrap 失败时抢救出来的内部日志（排障用，不入库）
 debootstrap-failed-*.log
 
+# ===== 临时排障 / 验证脚本（用完即弃，不入库） =====
+.wzy-*.sh
+
 # ===== 编辑器 / 系统杂项 =====
 .DS_Store
 Thumbs.db

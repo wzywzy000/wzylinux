@@ -114,9 +114,122 @@ wzy_stub_in() {
   for b in ${WZY_DIVERT_BINS}; do
     # 无条件注册：即使此刻文件还没解包出来，规则也已生效，后面解包照样被 divert。
     chroot "${CHROOT}" dpkg-divert --local --rename --add "/usr/bin/${b}" >/dev/null 2>&1
-    printf '#!/bin/sh\nexit 0\n' > "${CHROOT}/usr/bin/${b}"
-    chmod 0755 "${CHROOT}/usr/bin/${b}"
   done
+
+  # machine-id-setup：空转即可，machine-id 已由本脚本预置好。
+  printf '#!/bin/sh\nexit 0\n' > "${CHROOT}/usr/bin/systemd-machine-id-setup"
+  chmod 0755 "${CHROOT}/usr/bin/systemd-machine-id-setup"
+
+  # systemd-sysusers：**不能空转**。dbus 的 postinst 会用 dpkg-statoverride 把文件
+  # 属组设成 messagebus，而这个组正是 sysusers 建的；空转会导致
+  #   dpkg-statoverride: error: group 'messagebus' does not exist
+  # 进而 dbus 配置失败，并连锁拖垮 libpam-systemd / systemd-resolved /
+  # networkd-dispatcher / chrony / ubuntu-minimal 一整串。
+  # 所以这里用 useradd/groupadd 复刻 sysusers 的核心行为，真正把账户建出来。
+  cat > "${CHROOT}/usr/bin/systemd-sysusers" <<'WZYSU'
+#!/bin/sh
+# ---------------------------------------------------------------------------
+# 构建期替代 systemd-sysusers：WSL1 内核没有 OFD 文件锁，原版锁 /etc/passwd
+# 会返回 EINVAL，systemd 259 装上就跑不动。
+#
+# 为什么不能只写 exit 0（第一版就是这么栽的）：
+#   dbus.postinst 里有 dpkg-statoverride --update --add root messagebus 4754，
+#   直接引用 messagebus 组，但它自己不建组；建组的是 dbus-system-bus-common
+#   的 postinst 里的 systemd-sysusers dbus.conf。这里一空转，组就不存在，
+#   dbus 配置失败，并连锁拖垮 libpam-systemd / systemd-resolved /
+#   networkd-dispatcher / chrony / ubuntu-minimal 一整串。
+#
+# 实现：解析 sysusers.d 的 u / g 两类声明，用 groupadd / useradd 复刻核心行为。
+# 实测 26.04 的字段形态：
+#   g adm        4     -
+#   u root       0     - /root                 /bin/bash
+#   u _apt       42:65534 - /nonexistent        /usr/sbin/nologin   （uid:gid）
+#   u messagebus - "System Message Bus" /nonexistent               （GECOS 带引号）
+#   u! systemd-network - "systemd Network Management"              （u! 变体）
+# 先用 sed 把带引号的 GECOS 折叠成单字段并剥掉注释，再用 read 一次拆出各列，
+# 这样字段位置才对得上（home 是第 5 列，不是最后一列）。不依赖 awk。
+# ---------------------------------------------------------------------------
+SYSDIRS="/usr/lib/sysusers.d /run/sysusers.d /etc/sysusers.d"
+
+files=""
+for a in "$@"; do
+  case "$a" in -*) continue ;; esac   # 跳过 --root= 等选项
+  case "$a" in
+    /*) [ -f "$a" ] && files="$files $a" ;;
+    *)  for d in $SYSDIRS; do
+          if [ -f "$d/$a" ]; then files="$files $d/$a"; break; fi
+        done ;;
+  esac
+done
+if [ -z "$files" ]; then
+  for d in $SYSDIRS; do
+    for f in "$d"/*.conf; do
+      [ -f "$f" ] && files="$files $f"
+    done
+  done
+fi
+# 没有输入文件时必须直接退出：否则下面的 sed 会去读 stdin 而卡住。
+[ -n "$files" ] || exit 0
+
+have() { getent "$1" "$2" >/dev/null 2>&1; }
+
+add_group() {
+  [ -n "$1" ] || return 0
+  have group "$1" && return 0
+  # 指定 GID 时先试 --system（系统段），段位冲突再退回普通段
+  case "$2" in
+    ''|-|*[!0-9]*) groupadd --system "$1" >/dev/null 2>&1 || groupadd "$1" >/dev/null 2>&1 ;;
+    *) groupadd --system --gid "$2" "$1" >/dev/null 2>&1 || groupadd --gid "$2" "$1" >/dev/null 2>&1 ;;
+  esac
+  return 0
+}
+
+add_user() {
+  [ -n "$1" ] || return 0
+  have passwd "$1" && return 0
+  home="$3"; shell="$4"
+  case "$home"  in ''|-) home=/nonexistent      ;; esac
+  case "$shell" in ''|-) shell=/usr/sbin/nologin ;; esac
+  uid="${2%%:*}"; gid="${2##*:}"
+  [ "$gid" = "$uid" ] && gid=""      # 没有冒号时 gid 会被算成和 uid 一样
+  case "$uid" in ''|-|*[!0-9]*) uid="" ;; esac
+  case "$gid" in ''|-|*[!0-9]*) gid="" ;; esac
+
+  # 主组：conf 显式给了 gid 就用它，否则用同名组并先确保其存在。
+  #
+  # 这里的顺序很要命，踩过一次：不能「先建同名组，再不带 -g 调 useradd」。
+  # login.defs 里 USERGROUPS_ENAB=yes 时 useradd 会自己去建同名组，发现已存在
+  # 就直接报错退出（exit 9）：
+  #   useradd: group messagebus exists - if you want to add this user to that group, use -g.
+  # 表现极具迷惑性——组全都建出来了，用户一个都没有。
+  # 所以两条路只能选一条：要么不预建组、让 useradd 自己建；要么预建 + 显式 -g 指过去。
+  # 这里选后者，因为 dbus 的 dpkg-statoverride 要的正是 messagebus「组」，
+  # 不能去赌 USERGROUPS_ENAB 的取值。
+  if [ -z "$gid" ]; then
+    have group "$1" || add_group "$1" ""
+    gid="$1"
+  fi
+
+  args="-M -d $home -s $shell -g $gid"
+  [ -n "$uid" ] && args="$args -u $uid"
+  useradd --system $args "$1" >/dev/null 2>&1 || useradd $args "$1" >/dev/null 2>&1
+  return 0
+}
+
+# 两遍扫描：先建组、再建用户，避免用户的主组尚不存在。
+sed -e 's/#.*$//' -e 's/"[^"]*"/GECOS/g' $files 2>/dev/null |
+  while read -r t name id rest; do
+    case "$t" in g|g!) add_group "$name" "$id" ;; esac
+  done
+
+sed -e 's/#.*$//' -e 's/"[^"]*"/GECOS/g' $files 2>/dev/null |
+  while read -r t name id gecos home shell rest; do
+    case "$t" in u|u!) add_user "$name" "$id" "$home" "$shell" ;; esac
+  done
+
+exit 0
+WZYSU
+  chmod 0755 "${CHROOT}/usr/bin/systemd-sysusers"
   return 0
 }
 wzy_stub_out() {
@@ -170,6 +283,14 @@ if [ ! -s "${CHROOT}/etc/machine-id" ]; then
   cat /proc/sys/kernel/random/uuid | tr -d -- '-' > "${CHROOT}/etc/machine-id"
 fi
 wzy_stub_in
+
+# 主动预建账户：dbus.postinst 直接引用 messagebus 组却不建组，建组的是
+# dbus-system-bus-common.postinst。dpkg 的配置顺序不保证后者一定排在 dbus 前面
+# （它俩互为依赖、且 dbus 名字符序在前），所以这里先把已解包的所有
+# sysusers.d 跑一遍，把这个时序依赖彻底消除。
+echo "[WZY] 预建系统账户（解析 sysusers.d）…"
+chroot "${CHROOT}" /usr/bin/systemd-sysusers >/dev/null 2>&1 || true
+echo "[WZY]   messagebus 组：$(chroot "${CHROOT}" getent group messagebus 2>/dev/null || echo '缺失')"
 
 chroot "${CHROOT}" /debootstrap/debootstrap --second-stage
 
