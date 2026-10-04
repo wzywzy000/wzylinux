@@ -127,7 +127,17 @@ fi
 # divert 会注册一条持久规则——之后任何解包该路径的包都改写到 xxx.distrib，
 # 替身因此能一直活到桌面包装完。
 WZY_DIVERT_BINS="systemd-machine-id-setup systemd-sysusers"
+
+# 真 Linux（原生内核）上不需要任何替身，原版 systemd 工具本来就跑得好，
+# 而且更完整——它还会处理 sysusers.d 里 m（组成员）/ r（ID 范围）类型的声明，
+# 替身只实现了 u / g 两类。真机上请务必用 WZY_NO_STUB=1。
+WZY_NO_STUB="${WZY_NO_STUB:-0}"
+if [ "${WZY_NO_STUB}" = "1" ]; then
+  echo "[WZY] 真机模式（WZY_NO_STUB=1）：不使用 systemd 替身，走原版工具"
+fi
+
 wzy_stub_in() {
+  if [ "${WZY_NO_STUB}" = "1" ]; then return 0; fi
   local b
   for b in ${WZY_DIVERT_BINS}; do
     # 无条件注册：即使此刻文件还没解包出来，规则也已生效，后面解包照样被 divert。
@@ -251,6 +261,7 @@ WZYSU
   return 0
 }
 wzy_stub_out() {
+  if [ "${WZY_NO_STUB}" = "1" ]; then return 0; fi
   local b
   for b in ${WZY_DIVERT_BINS}; do
     # 有 .distrib 才说明 divert 真的建了，避免误删真身
