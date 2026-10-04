@@ -62,10 +62,28 @@ apt-get -o Acquire::Check-Valid-Until=false install -y --no-install-recommends \
   gdisk
 
 # 4) 准备目录（cache 不删除，跨次构建复用已下载的包）
+#
+# WZY_RESUME=1 断点续跑：上一轮若已跑完 debootstrap（日志出现
+# "Base system installed successfully."）却在后面的步骤崩了，用它跳过第 5 步，
+# 直接复用现成 chroot 往下跑，省掉约两小时的 debootstrap。
+# 需要它的原因：WSL1 的 fork 会随机返回 EINVAL（./build.sh: fork: Invalid argument），
+# 崩溃点可能落在任意一个包的触发器上——这次是 ca-certificates 的
+# "Updating certificates in /etc/ssl/certs"。跟内存/进程数无关（实测都很宽裕），
+# 是伪内核的瞬时缺陷，重跑未必落在同一处。
+WZY_RESUME="${WZY_RESUME:-0}"
 CACHE_DIR="${SCRIPT_DIR}/cache"
 mkdir -p "${CACHE_DIR}/debootstrap" "${CACHE_DIR}/apt/archives" "${CACHE_DIR}/apt/lists"
-rm -rf "${CHROOT}" "${ISO_ROOT}" "${WORK}" "${OUT_DIR}"
+if [ "${WZY_RESUME}" = "1" ] && [ -x "${CHROOT}/bin/bash" ]; then
+  echo "[WZY] 续跑模式：复用现有 chroot，跳过 debootstrap"
+  rm -rf "${ISO_ROOT}" "${WORK}" "${OUT_DIR}"
+else
+  WZY_RESUME="0"   # chroot 不可用就老实从头来
+  rm -rf "${CHROOT}" "${ISO_ROOT}" "${WORK}" "${OUT_DIR}"
+fi
 mkdir -p "${CHROOT}" "${ISO_ROOT}" "${WORK}" "${OUT_DIR}"
+
+# 第 5 步（debootstrap）整段在续跑模式下跳过
+if [ "${WZY_RESUME}" != "1" ]; then
 
 # 5) debootstrap 拉取最小根文件系统（--cache-dir 复用已下载的基础包）
 
@@ -290,15 +308,36 @@ wzy_stub_in
 # sysusers.d 跑一遍，把这个时序依赖彻底消除。
 echo "[WZY] 预建系统账户（解析 sysusers.d）…"
 chroot "${CHROOT}" /usr/bin/systemd-sysusers >/dev/null 2>&1 || true
-echo "[WZY]   messagebus 组：$(chroot "${CHROOT}" getent group messagebus 2>/dev/null || echo '缺失')"
+echo "[WZY]   messagebus 组：$(chroot "${CHROOT}" getent group messagebus 2>/dev/null || echo '尚未建（此阶段 sysusers.d 多半还没解包，属正常）')"
 
-chroot "${CHROOT}" /debootstrap/debootstrap --second-stage
+# 注意：--second-stage 失败不能直接让 set -e 掐掉整个脚本。
+# 典型情形是 dbus 配置失败（它的 postinst 直接引用 messagebus 组却自己不建组），
+# 而此时只要把账户补上、再让 dpkg 重新配置一次就能救回来。
+if ! chroot "${CHROOT}" /debootstrap/debootstrap --second-stage; then
+  echo "[WZY] 警告：--second-stage 返回非零，下面补齐账户后让 dpkg 重试…"
+fi
 
-# 卸掉第二阶段临时挂载，后面第 7 步会重新挂（保持原有流程不变）
-umount -lf "${CHROOT}/dev/pts" 2>/dev/null || true
-umount -lf "${CHROOT}/dev"     2>/dev/null || true
-umount -lf "${CHROOT}/sys"     2>/dev/null || true
-umount -lf "${CHROOT}/proc"    2>/dev/null || true
+  # 卸掉第二阶段临时挂载，后面第 7 步会重新挂（保持原有流程不变）
+  umount -lf "${CHROOT}/dev/pts" 2>/dev/null || true
+  umount -lf "${CHROOT}/dev"     2>/dev/null || true
+  umount -lf "${CHROOT}/sys"     2>/dev/null || true
+  umount -lf "${CHROOT}/proc"    2>/dev/null || true
+fi   # ---------- 第 5 步结束（WZY_RESUME=1 时整段跳过）----------
+
+# 兜底补建：上面那次预建跑在解包之前，多半是空跑。这里所有包都已解包并配置过一遍，
+# 再扫一次把可能漏掉的账户补齐；若刚才有包因账户缺失而失败，顺势让 dpkg 重试一次。
+# （--second-stage 失败时这一句是主要的自救手段，不能省。）
+# 续跑模式下同样需要：上一轮崩在包触发器上时，事务可能停在半配置状态。
+echo "[WZY] 补齐系统账户…"
+chroot "${CHROOT}" /usr/bin/systemd-sysusers >/dev/null 2>&1 || true
+echo "[WZY]   messagebus 组：$(chroot "${CHROOT}" getent group messagebus 2>/dev/null || echo '仍缺失')"
+# 续跑模式下这一句先不做：此刻 /proc 等还没挂载，postinst 容易失败，
+# 交给第 7 步——它挂好 /proc/sys/dev 后 apt 会自己把半配置的包收拾干净。
+if [ "${WZY_RESUME}" != "1" ]; then
+  if ! chroot "${CHROOT}" dpkg --configure -a; then
+    echo "[WZY] 警告：仍有包未配置成功，继续构建（后续 apt 安装可能会再次尝试）"
+  fi
+fi
 
 # 6) 准备 chroot 内环境（网络解析）
 cp /etc/resolv.conf "${CHROOT}/etc/resolv.conf"
@@ -314,6 +353,18 @@ mount --bind /dev/pts "${CHROOT}/dev/pts" 2>/dev/null || true
 mkdir -p "${CHROOT}/var/cache/apt/archives" "${CHROOT}/var/lib/apt/lists"
 mount --bind "${CACHE_DIR}/apt/archives" "${CHROOT}/var/cache/apt/archives"
 mount --bind "${CACHE_DIR}/apt/lists"    "${CHROOT}/var/lib/apt/lists"
+
+# 续跑时：上一轮崩在包触发器上，chroot 内的 dpkg 停在"中断"状态，
+# apt 会直接拒绝工作：
+#   E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem.
+# 必须在这里（挂载完成之后、apt 之前）把中断的事务收尾——放在前面那步不行，
+# 那时 /proc 还没挂，postinst 会失败。
+if [ "${WZY_RESUME}" = "1" ]; then
+  echo "[WZY] 续跑：收尾上次中断的 dpkg 事务…"
+  if ! chroot "${CHROOT}" dpkg --configure -a; then
+    echo "[WZY] 警告：dpkg --configure -a 未完全成功，仍尝试继续"
+  fi
+fi
 
 cleanup_mounts() {
   umount -lf "${CHROOT}/var/lib/apt/lists"    2>/dev/null || true
